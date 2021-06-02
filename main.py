@@ -6,7 +6,7 @@ from train import train, auto_eval
 
 
 class Config():
-    data_path = './data/yelp/'
+    data_path = './data/cs/'
     log_dir = 'runs/exp'
     save_path = './save'
     pretrained_embed_path = './embedding/'
@@ -14,7 +14,7 @@ class Config():
     discriminator_method = 'Multi' # 'Multi' or 'Cond'
     load_pretrained_embed = False
     min_freq = 3
-    max_length = 16
+    max_length = 256
     embed_size = 256
     d_model = 256
     h = 4
@@ -27,7 +27,7 @@ class Config():
     L2 = 0
     iter_D = 10
     iter_F = 5
-    F_pretrain_iter = 500
+    F_pretrain_iter = 1000
     log_steps = 5
     eval_steps = 25
     learned_pos_embed = True
