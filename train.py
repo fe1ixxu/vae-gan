@@ -374,32 +374,22 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     gold_text, raw_output, rev_output = inference(pos_iter, 1)
 
     for k in range(5):
-        idx = np.random.randint(len(rev_output[0]))
+        idx = np.random.randint(len(rev_output))
         print('*' * 20, 'non-cs -> cs sample', '*' * 20)
-        print('[gold]', gold_text[0][idx])
-        print('[non-cs(raw)]', raw_output[0][idx])
-        print('[cs(rev)]', rev_output[0][idx])
+        print('[gold]', gold_text[idx])
+        print('[non-cs(raw)]', raw_output[idx])
+        print('[cs(rev)]', rev_output[idx])
 
     print('*' * 20, '********', '*' * 20)
     
-    
+   
     # save output
     save_file = config.save_folder + '/' + str(global_step) + '.txt'
     with open(save_file, 'w') as fw:
-        for idx in range(len(rev_output[0])):
-            print('*' * 20, 'neg sample', '*' * 20, file=fw)
-            print('[gold]', gold_text[0][idx], file=fw)
-            print('[non-cs(raw) ]', raw_output[0][idx], file=fw)
-            print('[cs(rev) ]', rev_output[0][idx], file=fw)
+        for idx in range(len(rev_output)):
+            print('[gold]', gold_text[idx], file=fw)
+            print('[non-cs(raw) ]', raw_output[idx], file=fw)
+            print('[cs(rev) ]', rev_output[idx], file=fw)
 
-        print('*' * 20, '********', '*' * 20, file=fw)
 
-        for idx in range(len(rev_output[1])):
-            print('*' * 20, 'pos sample', '*' * 20, file=fw)
-            print('[gold]', gold_text[1][idx], file=fw)
-            print('[non-cs(raw) ]', raw_output[1][idx], file=fw)
-            print('[cs(rev) ]', rev_output[1][idx], file=fw)
-
-        print('*' * 20, '********', '*' * 20, file=fw)
-        
     model_F.train()
