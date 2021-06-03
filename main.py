@@ -13,7 +13,7 @@ class Config():
     device = torch.device('cuda' if True and torch.cuda.is_available() else 'cpu')
     discriminator_method = 'Multi' # 'Multi' or 'Cond'
     load_pretrained_embed = False
-    min_freq = 3
+    min_freq = 4
     max_length = 256
     embed_size = 256
     d_model = 256
