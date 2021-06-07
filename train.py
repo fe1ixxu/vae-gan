@@ -80,7 +80,7 @@ def mt_step(config, vocab, model_F, optimizer_F, batch, temperature, drop_decay)
         temperature=temperature,
     )
 
-    loss = loss_fn(log_probs.transpose(1, 2), inp_tokens) * token_mask
+    loss = loss_fn(log_probs.transpose(1, 2), ref_tokens) * token_mask
     loss = loss.sum() / batch_size
     loss *= config.slf_factor
     
@@ -307,7 +307,7 @@ def train_mt(config, vocab, model_F, train_iters, dev_iters, test_iters):
                 avrg_loss = np.mean(his_loss)
                 his_loss = []
                 print('[epoch:{} iter: {}] loss:{:.4f}'.format(epoch, i + 1, avrg_loss))
-                auto_eval_mt(config, vocab, model_F, test_iters, epoch, config.temperature)
+                #auto_eval_mt(config, vocab, model_F, test_iters, epoch, temperature)
         
         torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + '_F.pth')
         
@@ -533,7 +533,7 @@ def auto_eval_mt(config, vocab, model_F, test_iters, epoch, temperature):
     
    
     # save output
-    save_file = config.save_folder + '/' + epoch + '.txt'
+    save_file = config.save_folder + '/' + str(epoch) + '.txt'
     with open(save_file, 'w') as fw:
         for idx in range(len(raw_output)):
             print('[gold]', gold_text[idx], file=fw)
