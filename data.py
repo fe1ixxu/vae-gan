@@ -117,24 +117,26 @@ def load_dataset_mt(config, train_pos='train.en', train_neg='train.hi',
 
 
 
-class Config():
-    data_path = './data/en-hi/'
-    log_dir = 'runs/exp'
-    save_path = './save'
-    pretrained_embed_path = './embedding/'
-    discriminator_method = 'Multi' # 'Multi' or 'Cond'
-    load_pretrained_embed = False
-    min_freq = 6
+# class Config():
+#     data_path = './data/en-hi/'
+#     log_dir = 'runs/exp'
+#     save_path = './save'
+#     pretrained_embed_path = './embedding/'
+#     discriminator_method = 'Multi' # 'Multi' or 'Cond'
+#     load_pretrained_embed = False
+#     min_freq = 6
+#     batch_size = 32
+#     device = "cpu"
     
     
-if __name__ == '__main__':
-    config = Config()
-    train_iter, _, _, vocab = load_dataset_mt(config)
-    print(len(vocab))
-    for batch in train_iter:
-        text = tensor2text(vocab, batch.text)
-        print('\n'.join(text))
-        print(batch.label)
-        break
+# if __name__ == '__main__':
+#     config = Config()
+#     train_iter, _, _, vocab = load_dataset_mt(config)
+#     print(len(vocab))
+#     for batch in train_iter:
+#         text = tensor2text(vocab, batch.text)
+#         print('\n'.join(text))
+#         print(batch.label)
+#         break
 
 

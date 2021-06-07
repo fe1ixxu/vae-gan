@@ -37,7 +37,61 @@ def batch_preprocess(batch, pad_idx, eos_idx, reverse=False):
     styles = torch.cat((pos_styles, neg_styles), 0)
 
     return tokens, lengths, styles
+
+def batch_preprocess_mt(batch, pad_idx, eos_idx, reverse=False):
+    batch_pos, batch_neg = batch
+    diff = batch_pos.size(1) - batch_neg.size(1)
+    if diff < 0:
+        pad = torch.full_like(batch_neg[:, :-diff], pad_idx)
+        batch_pos = torch.cat((batch_pos, pad), 1)
+    elif diff > 0:
+        pad = torch.full_like(batch_pos[:, :diff], pad_idx)
+        batch_neg = torch.cat((batch_neg, pad), 1)
+
+    styles = torch.ones_like(batch_pos[:, 0])
+    lengths = get_lengths(batch_pos, eos_idx)
+
+    return batch_pos, batch_neg, lengths, styles
+
+def mt_step(config, vocab, model_F, optimizer_F, batch, temperature, drop_decay):
+    
+    pad_idx = vocab.stoi['<pad>']
+    eos_idx = vocab.stoi['<eos>']
+    unk_idx = vocab.stoi['<unk>']
+    vocab_size = len(vocab)
+    loss_fn = nn.NLLLoss(reduction='none')
+
+    inp_tokens, ref_tokens, inp_lengths, raw_styles = batch_preprocess_mt(batch, pad_idx, eos_idx)
+ 
+    batch_size = inp_tokens.size(0)
+    token_mask = (inp_tokens != pad_idx).float()
+
+    optimizer_F.zero_grad()
+
+    # self reconstruction loss
+
+    log_probs = model_F(
+        inp_tokens, 
+        ref_tokens, 
+        inp_lengths,
+        raw_styles,
+        generate=False,
+        differentiable_decode=False,
+        temperature=temperature,
+    )
+
+    loss = loss_fn(log_probs.transpose(1, 2), inp_tokens) * token_mask
+    loss = loss.sum() / batch_size
+    loss *= config.slf_factor
+    
+    loss.backward()
         
+    # update parameters
+    
+    clip_grad_norm_(model_F.parameters(), 5)
+    optimizer_F.step()
+
+    return loss.item()
 
 def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     model_F.eval()
@@ -222,6 +276,25 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
 
     return slf_rec_loss.item(), cyc_rec_loss.item(), adv_loss.item()
 
+def train_mt(config, vocab, model_F, train_iters, dev_iters, test_iters):
+    optimizer_F = optim.Adam(model_F.parameters(), lr=config.lr_F, weight_decay=config.L2)
+    his_loss = []
+    
+    model_F.train()
+    config.save_folder = config.save_path + '/' + "MT" + str(time.strftime('%b%d%H%M%S', time.localtime()))
+    os.makedirs(config.save_folder)
+    os.makedirs(config.save_folder + '/ckpts')
+    print('Save Path:', config.save_folder)
+    print('Model F MT pretraining......')
+    for epoch in config.mt_steps:
+        for i, batch in enumerate(train_iters):
+            loss = mt_step(config, vocab, model_F, optimizer_F, batch, 1.0, 1.0)
+            his_loss.append(loss)
+            if (i + 1) % 10 == 0:
+                avrg_loss = np.mean(his_loss)
+                his_loss = []
+                print('[epoch:{} iter: {}] loss:{:.4f}'.format(epoch, i + 1, avrg_loss))
+    
 def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     optimizer_F = optim.Adam(model_F.parameters(), lr=config.lr_F, weight_decay=config.L2)
     optimizer_D = optim.Adam(model_D.parameters(), lr=config.lr_D, weight_decay=config.L2)
@@ -393,3 +466,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
 
 
     model_F.train()
+
+
+
+
