@@ -151,7 +151,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     noise_inp_lengths = get_lengths(noise_inp_tokens, eos_idx)
 
     slf_log_probs = model_F(
-        noise_inp_tokens, 
+        noise_inp_tokens.detach(), 
         inp_tokens, 
         noise_inp_lengths,
         raw_styles,
