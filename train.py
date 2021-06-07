@@ -290,10 +290,17 @@ def train_mt(config, vocab, model_F, train_iters, dev_iters, test_iters):
         for i, batch in enumerate(train_iters):
             loss = mt_step(config, vocab, model_F, optimizer_F, batch, 1.0, 1.0)
             his_loss.append(loss)
-            if (i + 1) % 10 == 0:
+            if (i + 1) % 1000 == 0:
                 avrg_loss = np.mean(his_loss)
                 his_loss = []
                 print('[epoch:{} iter: {}] loss:{:.4f}'.format(epoch, i + 1, avrg_loss))
+                auto_eval_mt(config, vocab, model_F, test_iters, epoch, config.temperature)
+        
+        torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + '_F.pth')
+        auto_eval_mt(config, vocab, model_F, test_iters, epoch, config.temperature)
+                
+                
+    
     
 def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     optimizer_F = optim.Adam(model_F.parameters(), lr=config.lr_F, weight_decay=config.L2)
@@ -467,6 +474,58 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
 
     model_F.train()
 
+def auto_eval_mt(config, vocab, model_F, test_iters, epoch, temperature):
+    model_F.eval()
+    vocab_size = len(vocab)
+    eos_idx = vocab.stoi['<eos>']
 
+    def inference(data_iter, raw_style):
+        gold_text = []
+        raw_output = []
+        for batch in data_iter:
+            inp_tokens = batch.text
+            inp_lengths = get_lengths(inp_tokens, eos_idx)
+            raw_styles = torch.full_like(inp_tokens[:, 0], raw_style)
+        
+            with torch.no_grad():
+                raw_log_probs = model_F(
+                    inp_tokens,
+                    None,
+                    inp_lengths,
+                    raw_styles,
+                    generate=True,
+                    differentiable_decode=False,
+                    temperature=temperature,
+                )
+            
+                
+            gold_text += tensor2text(vocab, inp_tokens.cpu())
+            raw_output += tensor2text(vocab, raw_log_probs.argmax(-1).cpu())
+
+        return gold_text, raw_output
+
+    pos_iter = test_iters.pos_iter
+    neg_iter = test_iters.neg_iter
+    
+    gold_text, raw_output = inference(pos_iter, 1)
+
+    for k in range(5):
+        idx = np.random.randint(len(raw_output))
+        print('*' * 20, 'non-cs -> cs sample', '*' * 20)
+        print('[gold]', gold_text[idx])
+        print('[translated]', raw_output[idx])
+
+    print('*' * 20, '********', '*' * 20)
+    
+   
+    # save output
+    save_file = config.save_folder + '/' + epoch + '.txt'
+    with open(save_file, 'w') as fw:
+        for idx in range(len(raw_output)):
+            print('[gold]', gold_text[idx], file=fw)
+            print('[translated ]', raw_output[idx], file=fw)
+
+
+    model_F.train()
 
 
