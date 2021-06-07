@@ -6,7 +6,7 @@ from train import train, auto_eval
 
 
 class Config():
-    data_path = './data/cs/'
+    data_path = './data/cs-norepeat/'
     log_dir = 'runs/exp'
     save_path = './save'
     pretrained_embed_path = './embedding/'
@@ -26,8 +26,8 @@ class Config():
     lr_D = 0.0001
     L2 = 0
     iter_D = 5 #10
-    iter_F = 35
-    F_pretrain_iter = 500
+    iter_F = 30
+    F_pretrain_iter = 1200
     log_steps = 5
     eval_steps = 25
     learned_pos_embed = True
@@ -37,12 +37,12 @@ class Config():
 
     slf_factor = 0.25
     cyc_factor = 0.5
-    adv_factor = 1
+    adv_factor = 2
 
     inp_shuffle_len = 0
     inp_unk_drop_fac = 0
     inp_rand_drop_fac = 0
-    inp_drop_prob = 0
+    inp_drop_prob = 0.15
 
 
 def main():

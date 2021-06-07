@@ -245,7 +245,7 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     for i, batch in enumerate(train_iters):
         if i >= config.F_pretrain_iter:
             break
-        slf_loss, cyc_loss, _ = f_step(config, vocab, model_F, model_D, optimizer_F, batch, 1.0, 1.0, False)
+        slf_loss, cyc_loss, _ = f_step(config, vocab, model_F, model_D, optimizer_F, batch, 1.0, 1.0, True)
         his_f_slf_loss.append(slf_loss)
         his_f_cyc_loss.append(cyc_loss)
 
