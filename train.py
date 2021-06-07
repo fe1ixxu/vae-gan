@@ -286,7 +286,7 @@ def train_mt(config, vocab, model_F, train_iters, dev_iters, test_iters):
     os.makedirs(config.save_folder + '/ckpts')
     print('Save Path:', config.save_folder)
     print('Model F MT pretraining......')
-    for epoch in config.mt_steps:
+    for epoch in range(config.mt_steps):
         for i, batch in enumerate(train_iters):
             loss = mt_step(config, vocab, model_F, optimizer_F, batch, 1.0, 1.0)
             his_loss.append(loss)

@@ -6,14 +6,14 @@ from train import train, train_mt, auto_eval
 
 
 class Config():
-    data_path = './data/cs-norepeat/'
+    data_path = './data/en-hi/'
     log_dir = 'runs/exp'
     save_path = './save'
     pretrained_embed_path = './embedding/'
     device = torch.device('cuda' if True and torch.cuda.is_available() else 'cpu')
     discriminator_method = 'Multi' # 'Multi' or 'Cond'
     load_pretrained_embed = False
-    min_freq = 115
+    min_freq = 90
     max_length = 64
     embed_size = 256
     d_model = 256
