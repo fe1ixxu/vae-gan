@@ -46,7 +46,7 @@ class Config():
     
     ## for mt
     if_mt = True
-    mt_steps = 30
+    mt_steps = 100000
     
 
 

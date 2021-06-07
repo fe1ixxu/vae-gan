@@ -297,23 +297,24 @@ def train_mt(config, vocab, model_F, train_iters, dev_iters, test_iters):
                 k = (step - s_a) / (s_b - s_a)
                 temperature = (1 - k) * t_a + k * t_b
                 return temperature
-    
-    for epoch in range(config.mt_steps):
-        temperature = calc_temperature(config.temperature_config, epoch)
-        for i, batch in enumerate(train_iters):
-            loss = mt_step(config, vocab, model_F, optimizer_F, batch, 1.0, 1.0)
-            his_loss.append(loss)
-            if (i + 1) % 1000 == 0:
-                avrg_loss = np.mean(his_loss)
-                his_loss = []
-                print('[epoch:{} iter: {}] loss:{:.4f}'.format(epoch, i + 1, avrg_loss))
-                #auto_eval_mt(config, vocab, model_F, test_iters, epoch, temperature)
+    global_steps = 0
+    temperature = calc_temperature(config.temperature_config, global_steps)
+    for i, batch in enumerate(train_iters):
+        temperature = calc_temperature(config.temperature_config, global_steps)
+        loss = mt_step(config, vocab, model_F, optimizer_F, batch, 1.0, 1.0)
+        his_loss.append(loss)
+        if (i + 1) % 1000 == 0:
+            avrg_loss = np.mean(his_loss)
+            his_loss = []
+            print('[iter: {}] loss:{:.4f}'.format( i + 1, avrg_loss))
+            auto_eval_mt(config, vocab, model_F, test_iters, global_steps, temperature)
+        if (i+1) % 20000 == 0:
+            torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + '_F.pth')
         
-        torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + '_F.pth')
-        
-        auto_eval_mt(config, vocab, model_F, test_iters, epoch, temperature)
-                
-                
+            auto_eval_mt(config, vocab, model_F, test_iters, global_steps, temperature)
+        if i > config.mt_steps:
+            break         
+        global_steps += 1
     
     
 def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
