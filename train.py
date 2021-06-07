@@ -286,7 +286,20 @@ def train_mt(config, vocab, model_F, train_iters, dev_iters, test_iters):
     os.makedirs(config.save_folder + '/ckpts')
     print('Save Path:', config.save_folder)
     print('Model F MT pretraining......')
+    def calc_temperature(temperature_config, step):
+        num = len(temperature_config)
+        for i in range(num):
+            t_a, s_a = temperature_config[i]
+            if i == num - 1:
+                return t_a
+            t_b, s_b = temperature_config[i + 1]
+            if s_a <= step < s_b:
+                k = (step - s_a) / (s_b - s_a)
+                temperature = (1 - k) * t_a + k * t_b
+                return temperature
+    
     for epoch in range(config.mt_steps):
+        temperature = calc_temperature(config.temperature_config, epoch)
         for i, batch in enumerate(train_iters):
             loss = mt_step(config, vocab, model_F, optimizer_F, batch, 1.0, 1.0)
             his_loss.append(loss)
@@ -297,7 +310,8 @@ def train_mt(config, vocab, model_F, train_iters, dev_iters, test_iters):
                 auto_eval_mt(config, vocab, model_F, test_iters, epoch, config.temperature)
         
         torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + '_F.pth')
-        auto_eval_mt(config, vocab, model_F, test_iters, epoch, config.temperature)
+        
+        auto_eval_mt(config, vocab, model_F, test_iters, epoch, temperature)
                 
                 
     
