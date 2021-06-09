@@ -29,16 +29,18 @@ class Config():
     iter_D = 5 #10
     iter_F = 30
     F_pretrain_iter = 1000
+    D_pretrain_iter = 1000
     log_steps = 5
     eval_steps = 25
     learned_pos_embed = True
-    dropout = 0
+    dropout = 0.1
     drop_rate_config = [(1, 0)]
     temperature_config = [(1, 0)]
 
-    slf_factor = 0.25
+    slf_factor = 0.5
     cyc_factor = 0.5
-    adv_factor = 2
+    adv_factor = 1.5
+    mt_factor = 0.25
 
     inp_shuffle_len = 0
     inp_unk_drop_fac = 0
@@ -49,7 +51,7 @@ class Config():
     mt_data_path = './data/en-hi/'
     if_mt = True
     mt_steps = 200000
-    pretrained_mt_model = "./save/MTJun07221615/ckpts/_F.pth"
+    pretrained_mt_model = None #"./save/MTJun07221615/ckpts/_F.pth"
 
     # for evaluate
     if_evaluate = False
@@ -60,19 +62,17 @@ class Config():
     
 def to_train(config):
     if config.if_mt:
-        train_iters, dev_iters, test_iters, vocab, TEXT = load_dataset_mt(config)
+        train_iters_mt, dev_iters_mt, test_iters_mt, vocab, TEXT = load_dataset_mt(config)
         print('Vocab size:', len(vocab))
         model_F = StyleTransformer(config, vocab).to(config.device)
         if config.pretrained_mt_model:
+            print("Loading pretrained_mt_model")
             model_F.load_state_dict(torch.load(config.pretrained_mt_model))
-        else:
-            train_mt(config, vocab, model_F, train_iters, dev_iters, test_iters)
         
-        print("MT training finished")
         train_iters, dev_iters, test_iters, _, _ = load_dataset(config, TEXT)
         print('Vocab size:', len(vocab))
         model_D = Discriminator(config, vocab).to(config.device)
-        train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters)
+        train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters, train_iters_mt, dev_iters_mt, test_iters_mt)
     else:
         train_iters, dev_iters, test_iters, vocab, TEXT = load_dataset(config)
         print('Vocab size:', len(vocab))
@@ -80,14 +80,23 @@ def to_train(config):
         model_D = Discriminator(config, vocab).to(config.device)
         print(config.discriminator_method)
         
-        train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters)
+        train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters, None, None, None)
 
 def to_evaluate(config):
-    train_iters, dev_iters, test_iters, vocab, TEXT = load_dataset_mt(config)
-    print('Vocab size:', len(vocab))
-    model_F = StyleTransformer(config, vocab).to(config.device)
-    model_F.load_state_dict(torch.load(config.model_F_path))
-    evaluator(config, TEXT, model_F, config.test_file)
+    if config.if_mt:
+        train_iters, dev_iters, test_iters, vocab, TEXT = load_dataset_mt(config)
+        print('Vocab size:', len(vocab))
+        model_F = StyleTransformer(config, vocab).to(config.device)
+        model_F.load_state_dict(torch.load(config.model_F_path))
+        evaluator(config, TEXT, model_F, config.test_file)
+
+    else:
+        train_iters, dev_iters, test_iters, vocab, TEXT = load_dataset(config)
+        print('Vocab size:', len(vocab))
+        model_F = StyleTransformer(config, vocab).to(config.device)
+        model_F.load_state_dict(torch.load(config.model_F_path))
+        print(config.discriminator_method)
+        evaluator(config, TEXT, model_F, config.test_file)
 
 
 

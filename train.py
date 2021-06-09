@@ -48,10 +48,9 @@ def batch_preprocess_mt(batch, pad_idx, eos_idx, reverse=False):
         pad = torch.full_like(batch_pos[:, :diff], pad_idx)
         batch_neg = torch.cat((batch_neg, pad), 1)
 
-    styles = torch.ones_like(batch_pos[:, 0])
     lengths = get_lengths(batch_pos, eos_idx)
 
-    return batch_pos, batch_neg, lengths, styles
+    return batch_pos, batch_neg, lengths
 
 def mt_step(config, vocab, model_F, optimizer_F, batch, temperature, drop_decay):
     
@@ -61,21 +60,19 @@ def mt_step(config, vocab, model_F, optimizer_F, batch, temperature, drop_decay)
     vocab_size = len(vocab)
     loss_fn = nn.NLLLoss(reduction='none')
 
-    inp_tokens, ref_tokens, inp_lengths, raw_styles = batch_preprocess_mt(batch, pad_idx, eos_idx)
+    inp_tokens, ref_tokens, inp_lengths = batch_preprocess_mt(batch, pad_idx, eos_idx)
  
     batch_size = inp_tokens.size(0)
     token_mask = (inp_tokens != pad_idx).float()
 
     optimizer_F.zero_grad()
-    rev_styles = 1 - raw_styles
-    styles = raw_styles if np.random.rand() < 0.5 else rev_styles
     # self reconstruction loss
 
     log_probs = model_F(
         inp_tokens, 
         ref_tokens, 
         inp_lengths,
-        styles,
+        None,
         generate=False,
         differentiable_decode=False,
         temperature=temperature,
@@ -83,7 +80,7 @@ def mt_step(config, vocab, model_F, optimizer_F, batch, temperature, drop_decay)
 
     loss = loss_fn(log_probs.transpose(1, 2), ref_tokens) * token_mask
     loss = loss.sum() / batch_size
-    loss *= config.slf_factor
+    loss *= config.mt_factor
     
     loss.backward()
         
@@ -276,49 +273,9 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     model_D.train()
 
     return slf_rec_loss.item(), cyc_rec_loss.item(), adv_loss.item()
-
-def train_mt(config, vocab, model_F, train_iters, dev_iters, test_iters):
-    optimizer_F = optim.Adam(model_F.parameters(), lr=config.lr_F, weight_decay=config.L2)
-    his_loss = []
-    
-    model_F.train()
-    config.save_folder = config.save_path + '/' + "MT" + str(time.strftime('%b%d%H%M%S', time.localtime()))
-    os.makedirs(config.save_folder)
-    os.makedirs(config.save_folder + '/ckpts')
-    print('Save Path:', config.save_folder)
-    print('Model F MT pretraining......')
-    def calc_temperature(temperature_config, step):
-        num = len(temperature_config)
-        for i in range(num):
-            t_a, s_a = temperature_config[i]
-            if i == num - 1:
-                return t_a
-            t_b, s_b = temperature_config[i + 1]
-            if s_a <= step < s_b:
-                k = (step - s_a) / (s_b - s_a)
-                temperature = (1 - k) * t_a + k * t_b
-                return temperature
-    global_steps = 0
-    temperature = calc_temperature(config.temperature_config, global_steps)
-    for i, batch in enumerate(train_iters):
-        temperature = calc_temperature(config.temperature_config, global_steps)
-        loss = mt_step(config, vocab, model_F, optimizer_F, batch, 1.0, 1.0)
-        his_loss.append(loss)
-        if (i + 1) % 1000 == 0:
-            avrg_loss = np.mean(his_loss)
-            his_loss = []
-            print('[iter: {}] loss:{:.4f}'.format( i + 1, avrg_loss))
-            auto_eval_mt(config, vocab, model_F, test_iters, global_steps, temperature)
-        if (i+1) % 20000 == 0:
-            torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + '_F.pth')
-        
-            auto_eval_mt(config, vocab, model_F, test_iters, global_steps, temperature)
-        if i > config.mt_steps:
-            break         
-        global_steps += 1
     
     
-def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
+def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters, train_iters_mt, dev_iters_mt, test_iters_mt):
     optimizer_F = optim.Adam(model_F.parameters(), lr=config.lr_F, weight_decay=config.L2)
     optimizer_D = optim.Adam(model_D.parameters(), lr=config.lr_D, weight_decay=config.L2)
 
@@ -326,6 +283,7 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     his_f_slf_loss = []
     his_f_cyc_loss = []
     his_f_adv_loss = []
+    his_mt_loss = []
     
     #writer = SummaryWriter(config.log_dir)
     global_step = 0
@@ -342,8 +300,6 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
         if i >= config.F_pretrain_iter:
             break
         slf_loss, cyc_loss, _ = f_step(config, vocab, model_F, model_D, optimizer_F, batch, 1.0, 1.0, True)
-        d_adv_loss = d_step(config, vocab, model_F, model_D, optimizer_D, batch, 1.0)
-        his_d_adv_loss.append(d_adv_loss)
         his_f_slf_loss.append(slf_loss)
         his_f_cyc_loss.append(cyc_loss)
 
@@ -354,8 +310,19 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
             his_f_slf_loss = []
             his_f_cyc_loss = []
             his_d_adv_loss = []
-            print('[iter: {}] slf_loss:{:.4f}, rec_loss:{:.4f}, d_adv_loss{:.4f}'.format(i + 1, avrg_f_slf_loss, avrg_f_cyc_loss, d_adv_loss))
+            print('[iter: {}] slf_loss:{:.4f}, rec_loss:{:.4f}'.format(i + 1, avrg_f_slf_loss, avrg_f_cyc_loss))
+    
+    print('Model D pretraining......')
+    for i, batch in enumerate(train_iters):
+        if i >= config.D_pretrain_iter:
+            break
+        d_adv_loss = d_step(config, vocab, model_F, model_D, optimizer_D, batch, 1.0)
+        his_d_adv_loss.append(d_adv_loss)
 
+        if (i + 1) % 10 == 0:
+            avrg_f_adv_loss = np.mean(his_d_adv_loss)
+            his_d_adv_loss = []
+            print('[iter: {}] d_adv_loss{:.4f}'.format(i + 1, d_adv_loss))
     
     print('Training start......')
 
@@ -371,10 +338,14 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
                 temperature = (1 - k) * t_a + k * t_b
                 return temperature
     batch_iters = iter(train_iters)
+    if train_iters_mt: batch_iters_mt = iter(train_iters_mt)
+    assert train_iters_mt and config.iter_mt > 0
+    
     while True:
         drop_decay = calc_temperature(config.drop_rate_config, global_step)
         temperature = calc_temperature(config.temperature_config, global_step)
         batch = next(batch_iters)
+        batch_mt = next(batch_iters_mt)
         
         for _ in range(config.iter_D):
             batch = next(batch_iters)
@@ -392,6 +363,10 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
             his_f_cyc_loss.append(f_cyc_loss)
             his_f_adv_loss.append(f_adv_loss)
             
+        for _ in range(config.iter_mt):
+            batch_mt = next(batch_iters_mt)
+            mt_loss = mt_step(config, vocab, model_F, optimizer_F, batch_mt, temperature, drop_decay)
+            his_mt_loss.append(mt_loss)
         
         global_step += 1
         #writer.add_scalar('rec_loss', rec_loss.item(), global_step)
@@ -403,13 +378,16 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
             avrg_f_slf_loss = np.mean(his_f_slf_loss)
             avrg_f_cyc_loss = np.mean(his_f_cyc_loss)
             avrg_f_adv_loss = np.mean(his_f_adv_loss)
+            avrg_mt_loss = np.mean(his_mt_loss)
             log_str = '[iter {}] d_adv_loss: {:.4f}  ' + \
                       'f_slf_loss: {:.4f}  f_cyc_loss: {:.4f}  ' + \
-                      'f_adv_loss: {:.4f}  temp: {:.4f}  drop: {:.4f}'
+                      'f_adv_loss: {:.4f}  temp: {:.4f}  drop: {:.4f}' + \
+                      'mt_loss: {:.4f}'
             print(log_str.format(
                 global_step, avrg_d_adv_loss,
                 avrg_f_slf_loss, avrg_f_cyc_loss, avrg_f_adv_loss,
-                temperature, config.inp_drop_prob * drop_decay
+                temperature, config.inp_drop_prob * drop_decay,
+                avrg_mt_loss
             ))
                 
         if global_step % config.eval_steps == 0:
@@ -417,26 +395,29 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
             his_f_slf_loss = []
             his_f_cyc_loss = []
             his_f_adv_loss = []
+            his_mt_loss = []
             
             #save model
             torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_F.pth')
             torch.save(model_D.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_D.pth')
-            auto_eval(config, vocab, model_F, test_iters, global_step, temperature)
+            auto_eval(config, vocab, model_F, test_iters, test_iters_mt, global_step, temperature)
             #for path, sub_writer in writer.all_writers.items():
             #    sub_writer.flush()
 
-def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
+def auto_eval(config, vocab, model_F, test_iters, test_iters_mt,  global_step, temperature):
     model_F.eval()
     vocab_size = len(vocab)
     eos_idx = vocab.stoi['<eos>']
 
-    def inference(data_iter, raw_style):
+    def inference(data_iter, data_iter_mt, raw_style):
         gold_text = []
         raw_output = []
         rev_output = []
-        for batch in data_iter:
+        for batch, batch_mt in zip(data_iter, data_iter_mt):
             inp_tokens = batch.text
             inp_lengths = get_lengths(inp_tokens, eos_idx)
+            inp_tokens_mt = batch_mt.text
+            inp_lengths_mt = get_lengths(inp_tokens_mt, eos_idx)
             raw_styles = torch.full_like(inp_tokens[:, 0], raw_style)
             rev_styles = 1 - raw_styles
         
@@ -462,16 +443,31 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
                     temperature=temperature,
                 )
                 
+            with torch.no_grad():
+                mt_probs = model_F(
+                    inp_tokens_mt, 
+                    None,
+                    inp_lengths_mt,
+                    None,
+                    generate=True,
+                    differentiable_decode=False,
+                    temperature=temperature,
+                )
+                
             gold_text += tensor2text(vocab, inp_tokens.cpu())
             raw_output += tensor2text(vocab, raw_log_probs.argmax(-1).cpu())
             rev_output += tensor2text(vocab, rev_log_probs.argmax(-1).cpu())
+            gold_text_mt += tensor2text(vocab, inp_tokens_mt.cpu())
+            mt_output += tensor2text(vocab, mt_probs.argmax(-1).cpu())
 
-        return gold_text, raw_output, rev_output
+        return gold_text, raw_output, rev_output, gold_text_mt, mt_output
 
     pos_iter = test_iters.pos_iter
     neg_iter = test_iters.neg_iter
+    pos_iter_mt = test_iters_mt.pos_iter
+    neg_iter_mt = test_iters_mt.neg_iter
     
-    gold_text, raw_output, rev_output = inference(pos_iter, 1)
+    gold_text, raw_output, rev_output, gold_text_mt, mt_output = inference(pos_iter, pos_iter_mt, 1)
 
     for k in range(5):
         idx = np.random.randint(len(rev_output))
@@ -479,6 +475,8 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
         print('[gold]', gold_text[idx])
         print('[non-cs(raw)]', raw_output[idx])
         print('[cs(rev)]', rev_output[idx])
+        print('[gold_text_mt]', gold_text_mt[idx])
+        print('[mt_output]', mt_output[idx])
 
     print('*' * 20, '********', '*' * 20)
     
@@ -493,59 +491,4 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
 
 
     model_F.train()
-
-def auto_eval_mt(config, vocab, model_F, test_iters, epoch, temperature):
-    model_F.eval()
-    vocab_size = len(vocab)
-    eos_idx = vocab.stoi['<eos>']
-
-    def inference(data_iter, raw_style):
-        gold_text = []
-        raw_output = []
-        for batch in data_iter:
-            inp_tokens = batch.text
-            inp_lengths = get_lengths(inp_tokens, eos_idx)
-            raw_styles = torch.full_like(inp_tokens[:, 0], raw_style)
-        
-            with torch.no_grad():
-                raw_log_probs = model_F(
-                    inp_tokens,
-                    None,
-                    inp_lengths,
-                    raw_styles,
-                    generate=True,
-                    differentiable_decode=False,
-                    temperature=temperature,
-                )
-            
-                
-            gold_text += tensor2text(vocab, inp_tokens.cpu())
-            raw_output += tensor2text(vocab, raw_log_probs.argmax(-1).cpu())
-
-        return gold_text, raw_output
-
-    pos_iter = test_iters.pos_iter
-    neg_iter = test_iters.neg_iter
-    
-    gold_text, raw_output = inference(pos_iter, 1)
-
-    for k in range(5):
-        idx = np.random.randint(len(raw_output))
-        print('*' * 20, 'non-cs -> cs sample', '*' * 20)
-        print('[gold]', gold_text[idx])
-        print('[translated]', raw_output[idx])
-
-    print('*' * 20, '********', '*' * 20)
-    
-   
-    # save output
-    save_file = config.save_folder + '/' + str(epoch) + '.txt'
-    with open(save_file, 'w') as fw:
-        for idx in range(len(raw_output)):
-            print('[gold]', gold_text[idx], file=fw)
-            print('[translated ]', raw_output[idx], file=fw)
-
-
-    model_F.train()
-
 

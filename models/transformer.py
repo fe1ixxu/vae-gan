@@ -44,10 +44,13 @@ class StyleTransformer(nn.Module):
 
         tgt_mask = torch.ones((self.max_length, self.max_length)).to(src_mask.device)
         tgt_mask = (tgt_mask.tril() == 0).view(1, 1, self.max_length, self.max_length)
-
-        style_emb = self.style_embed(style).unsqueeze(1)
-
-        enc_input = torch.cat((style_emb, self.embed(inp_tokens, pos_idx[:, :max_enc_len])), 1)
+        
+        if style:
+            style_emb = self.style_embed(style).unsqueeze(1)
+            enc_input = torch.cat((style_emb, self.embed(inp_tokens, pos_idx[:, :max_enc_len])), 1)
+        else:
+            enc_input = self.embed(inp_tokens, pos_idx[:, :max_enc_len])
+            
         memory = self.encoder(enc_input, src_mask)
         
         sos_token = self.sos_token.view(1, 1, -1).expand(batch_size, -1, -1)
