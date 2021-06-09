@@ -67,14 +67,15 @@ def mt_step(config, vocab, model_F, optimizer_F, batch, temperature, drop_decay)
     token_mask = (inp_tokens != pad_idx).float()
 
     optimizer_F.zero_grad()
-
+    rev_styles = 1 - raw_styles
+    styles = raw_styles if np.random.rand() < 0.5 else rev_styles
     # self reconstruction loss
 
     log_probs = model_F(
         inp_tokens, 
         ref_tokens, 
         inp_lengths,
-        raw_styles,
+        styles,
         generate=False,
         differentiable_decode=False,
         temperature=temperature,
@@ -341,15 +342,19 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
         if i >= config.F_pretrain_iter:
             break
         slf_loss, cyc_loss, _ = f_step(config, vocab, model_F, model_D, optimizer_F, batch, 1.0, 1.0, True)
+        d_adv_loss = d_step(config, vocab, model_F, model_D, optimizer_D, batch, 1.0)
+        his_d_adv_loss.append(d_adv_loss)
         his_f_slf_loss.append(slf_loss)
         his_f_cyc_loss.append(cyc_loss)
 
         if (i + 1) % 10 == 0:
             avrg_f_slf_loss = np.mean(his_f_slf_loss)
             avrg_f_cyc_loss = np.mean(his_f_cyc_loss)
+            avrg_f_adv_loss = np.mean(his_d_adv_loss)
             his_f_slf_loss = []
             his_f_cyc_loss = []
-            print('[iter: {}] slf_loss:{:.4f}, rec_loss:{:.4f}'.format(i + 1, avrg_f_slf_loss, avrg_f_cyc_loss))
+            his_d_adv_loss = []
+            print('[iter: {}] slf_loss:{:.4f}, rec_loss:{:.4f}, d_adv_loss{:.4f}'.format(i + 1, avrg_f_slf_loss, avrg_f_cyc_loss, d_adv_loss))
 
     
     print('Training start......')
